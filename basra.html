@@ -235,6 +235,11 @@
   .roundtable td{padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.1)}
   .roundtable td:last-child{text-align:right;font-weight:900}
   .hidden{display:none!important}
+  #joinCode{width:100%;padding:12px;border-radius:12px;border:none;margin-bottom:10px;
+    background:rgba(255,255,255,.08);color:var(--txt);font-family:inherit;font-size:26px;
+    font-weight:900;text-align:center;letter-spacing:10px;text-transform:uppercase;
+    box-shadow:inset 0 3px 0 rgba(0,0,0,.4), inset 0 0 0 2px rgba(255,255,255,.1);outline:none}
+  #joinCode:focus{box-shadow:inset 0 3px 0 rgba(0,0,0,.4), inset 0 0 0 2px var(--blue)}
   #helpbtn{position:fixed;top:calc(8px + env(safe-area-inset-top));right:10px;z-index:60;
     width:34px;height:34px;border-radius:50%;border:none;background:var(--panel);
     color:var(--gold);font-weight:900;font-size:17px;box-shadow:0 3px 0 var(--panel-edge);
@@ -248,7 +253,7 @@
 <div id="game">
   <div id="hud">
     <div class="scorebox opp" id="oppbox">
-      <div class="who chunk">DEALER</div>
+      <div class="who chunk" id="oppName">DEALER</div>
       <div class="pts chunk" id="oppPts">0</div>
       <div class="sub" id="oppSub">0 cards</div>
     </div>
@@ -281,7 +286,7 @@
 <div class="overlay" id="titleOv">
   <div class="sheet">
     <h1 class="chunk">BASRA</h1>
-    <p style="text-align:center;margin-bottom:14px">The Egyptian fishing card game.<br>First to <span class="tag">101</span> wins.</p>
+    <p style="text-align:center;margin-bottom:14px">The Egyptian fishing card game.<br>First to <span class="tag">150</span> wins.</p>
     <ul>
       <li>Play a card. It sweeps floor cards of the <b>same rank</b> — and any groups of number cards <b>summing to its value</b>.</li>
       <li><span class="tag">J</span> vacuums the whole floor (never a Basra).</li>
@@ -289,7 +294,8 @@
       <li>Clear the floor = <b class="chunk" style="color:var(--gold)">BASRA! +10</b></li>
       <li>Most captured cards at round end = <b>+30</b>.</li>
     </ul>
-    <div class="btnrow"><button class="bbtn gold" onclick="game.newMatch()">DEAL ME IN</button></div>
+    <div class="btnrow"><button class="bbtn gold" onclick="game.newMatch()">VS DEALER</button>
+    <button class="bbtn blue" onclick="ui.mpShow()">PLAY A FRIEND</button></div>
   </div>
 </div>
 
@@ -299,6 +305,26 @@
     <h2 class="chunk" id="roundTitle">ROUND OVER</h2>
     <table class="roundtable" id="roundTable"></table>
     <div class="btnrow"><button class="bbtn blue" id="roundBtn" onclick="game.nextRound()">NEXT ROUND</button></div>
+  </div>
+</div>
+
+<!-- multiplayer lobby -->
+<div class="overlay hidden" id="mpOv">
+  <div class="sheet">
+    <h2 class="chunk">PLAY A FRIEND</h2>
+    <div id="mpHome">
+      <p style="text-align:center;margin-bottom:12px">One phone creates a room, the other joins with the 4-letter code. Works iPhone ↔ Android.</p>
+      <div class="btnrow"><button class="bbtn gold" onclick="game.createRoom()">CREATE ROOM</button></div>
+      <p style="text-align:center;margin:12px 0;opacity:.6" class="chunk">— OR —</p>
+      <input id="joinCode" maxlength="4" placeholder="CODE" autocomplete="off">
+      <div class="btnrow"><button class="bbtn blue" onclick="game.joinRoom(ui.el('joinCode').value)">JOIN ROOM</button></div>
+    </div>
+    <div id="mpMsg" style="text-align:center;margin-top:14px">
+      <p id="mpLine1" style="font-size:14px"></p>
+      <div id="mpCode" class="chunk" style="font-size:52px;color:var(--gold);letter-spacing:8px"></div>
+      <p id="mpLine2" style="font-size:12px;opacity:.75"></p>
+    </div>
+    <div class="btnrow"><button class="bbtn red" onclick="game.leaveMp();ui.hide('mpOv');ui.show('titleOv')">BACK</button></div>
   </div>
 </div>
 
@@ -314,23 +340,54 @@
       <li><b>7♦ (Komi):</b> captures the entire floor. Scores a Basra only if the floor is all number cards totaling ≤ 10.</li>
       <li><b>Basra (+10):</b> clearing the floor with any card except a Jack.</li>
       <li><b>Round end:</b> leftover floor cards go to whoever captured last. Majority of cards = +30 (tie: nobody).</li>
-      <li><b>Match:</b> rounds repeat until someone reaches 101.</li>
+      <li><b>Match:</b> rounds repeat until someone reaches 150.</li>
     </ul>
     <div class="btnrow"><button class="bbtn red" onclick="ui.help(false)">BACK</button></div>
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 <script>
 "use strict";
+/* ╔════════════════════════════════════════════════════╗
+   ║  PASTE YOUR FIREBASE CONFIG BETWEEN THE BRACES      ║
+   ║  (Firebase console → Project settings → Your apps)  ║
+   ╚════════════════════════════════════════════════════╝ */
+const FIREBASE_CONFIG={
+  apiKey:"PASTE_HERE",
+  authDomain:"PASTE_HERE",
+  databaseURL:"PASTE_HERE",
+  projectId:"PASTE_HERE",
+  storageBucket:"PASTE_HERE",
+  messagingSenderId:"PASTE_HERE",
+  appId:"PASTE_HERE"
+};
+/* ══════════════════════════════════════════════════════ */
+let db=null;
+try{
+  if(typeof firebase!=="undefined"&&FIREBASE_CONFIG.apiKey!=="PASTE_HERE"){
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db=firebase.database();
+  }
+}catch(e){console.warn("Firebase init failed:",e);}
+
+const TARGET=150;   // first to this score wins the match
+
+/* deterministic RNG so both phones shuffle identically */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;
+  return((t^t>>>14)>>>0)/4294967296;};}
+
 /* ================= CARD MODEL ================= */
 const SUITS=["♠","♥","♦","♣"], REDS=new Set(["♥","♦"]);
 const RNAME={1:"A",11:"J",12:"Q",13:"K"};
 const rname=r=>RNAME[r]||String(r);
-let CID=0;
-function makeDeck(){
+function makeDeck(rng){
+  const rand=rng||Math.random;
   const d=[];
-  for(const s of SUITS)for(let r=1;r<=13;r++)d.push({id:++CID,r,s});
-  for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]];}
+  SUITS.forEach((s,si)=>{for(let r=1;r<=13;r++)d.push({id:si*13+r,r,s});});
+  for(let i=d.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[d[i],d[j]]=[d[j],d[i]];}
   return d;
 }
 const isKomi=c=>c.r===7&&c.s==="♦";
@@ -385,10 +442,12 @@ function resolveCapture(card,floor){
 const game={
   deck:[],floor:[],hands:[[],[]],piles:[[],[]],basras:[0,0],
   match:[0,0],lastCap:-1,turn:0,round:1,locked:true,
+  mySeat:0, mp:{on:false},
 
-  newMatch(){this.match=[0,0];this.round=1;ui.hide("titleOv");this.newRound();},
+  newMatch(){this.leaveMp();this.match=[0,0];this.round=1;ui.hide("titleOv");this.newRound();},
   newRound(){
-    this.deck=makeDeck();this.floor=[];this.piles=[[],[]];this.basras=[0,0];
+    const rng=this.mp.on?mulberry32((this.mp.seed|0)+this.round*7919):null;
+    this.deck=makeDeck(rng);this.floor=[];this.piles=[[],[]];this.basras=[0,0];
     this.lastCap=-1;this.turn=0;this.locked=true;
     this.hands=[this.deck.splice(0,4),this.deck.splice(0,4)];
     // deal floor; bury jacks & komi back under the deck
@@ -397,8 +456,10 @@ const game={
       if(c.r===11||isKomi(c))this.deck.push(c);else this.floor.push(c);
     }
     ui.renderAll();ui.dealAnim(true);
-    ui.toast("Round "+this.round+" — your move");
-    this.locked=false;ui.renderAll();
+    this.locked=this.mp.on?(this.turn!==this.mySeat):false;
+    ui.toast("Round "+this.round+(this.locked?" — their move first":" — your move"));
+    ui.renderAll();
+    if(this.mp.on)setTimeout(()=>this.drainMoves(),80);
   },
   redeal(){
     this.hands=[this.deck.splice(0,4),this.deck.splice(0,4)];
@@ -406,16 +467,25 @@ const game={
     ui.toast("Fresh hands dealt");
   },
 
-  async play(pi,card,srcRect){
+  async play(pi,card,srcRect,fromRemote){
+    if(!card)return;
     this.locked=true;
-    const hand=this.hands[pi];
-    hand.splice(hand.findIndex(c=>c.id===card.id),1);
+    try{
+      const hand=this.hands[pi];
+      const hi=hand.findIndex(c=>c.id===card.id);
+      if(hi<0){this.locked=false;ui.renderAll();return;}
+      hand.splice(hi,1);
+      // multiplayer: announce our move (remote replays it via the listener)
+      if(this.mp.on&&!fromRemote&&pi===this.mySeat&&db){
+        db.ref(`rooms/${this.mp.code}/moves/${this.mp.seq}`).set({seat:pi,cardId:card.id});
+      }
+      if(this.mp.on)this.mp.seq++;
     const cap=resolveCapture(card,this.floor);
 
     // PHASE 1 — card flies from hand to the floor
     this.floor.push(card);          // visually lands first, even on a capture
     ui.renderAll();
-    await ui.ghostFly(card,srcRect,ui.floorEl(card.id),{flip:pi===1});
+    await ui.ghostFly(card,srcRect,ui.floorEl(card.id),{flip:pi!==this.mySeat});
 
     if(cap){
       // PHASE 2 — captured cards pulse gold
@@ -441,13 +511,21 @@ const game={
     }
     this.turn=1-this.turn;
     ui.renderAll();
-    if(this.turn===1){await wait(600);this.aiMove();}
+    if(this.mp.on){
+      if(this.turn===this.mySeat){this.locked=false;ui.renderAll();}
+      else{ui.toast("Their move…");this.drainMoves();}   // apply any move already queued
+    }
+    else if(this.turn===1){await wait(600);this.aiMove();}
     else this.locked=false,ui.renderAll();
+    }catch(err){
+      console.error("play() error:",err);
+      this.locked=false;ui.renderAll();   // recover instead of freezing
+    }
   },
 
   aiMove(){
     const hand=this.hands[1],floor=this.floor;
-    let bestC=null,bestScore=-1;
+    let bestC=null,bestScore=-Infinity;
     for(const c of hand){
       const cap=resolveCapture(c,floor);
       let s;
@@ -463,6 +541,7 @@ const game={
       s+=Math.random()*.3;
       if(s>bestScore){bestScore=s;bestC=c;}
     }
+    if(!bestC)bestC=hand[0];   // never stall
     const idx=hand.indexOf(bestC);
     const mini=document.querySelectorAll("#opprow .mini")[idx];
     this.play(1,bestC,mini?mini.getBoundingClientRect():null);
@@ -473,18 +552,86 @@ const game={
     if(this.floor.length&&this.lastCap>=0){
       this.piles[this.lastCap].push(...this.floor);this.floor=[];
     }
-    const n0=this.piles[0].length,n1=this.piles[1].length;
-    let p0=this.basras[0]*10,p1=this.basras[1]*10;
-    let maj="Split — no bonus";
-    if(n0>n1){p0+=30;maj="You take the 30";}
-    else if(n1>n0){p1+=30;maj="Dealer takes the 30";}
-    this.match[0]+=p0;this.match[1]+=p1;
-    ui.roundSummary(n0,n1,p0,p1,maj);
+    const n=[this.piles[0].length,this.piles[1].length];
+    const p=[this.basras[0]*10,this.basras[1]*10];
+    let majSeat=-1;
+    if(n[0]>n[1]){p[0]+=30;majSeat=0;}
+    else if(n[1]>n[0]){p[1]+=30;majSeat=1;}
+    this.match[0]+=p[0];this.match[1]+=p[1];
+    ui.roundSummary(n,p,majSeat);
   },
   nextRound(){
     ui.hide("roundOv");
-    if(this.match[0]>=101||this.match[1]>=101){ui.show("titleOv");return;}
+    if(this.match[0]>=TARGET||this.match[1]>=TARGET){this.leaveMp();ui.show("titleOv");return;}
     this.round++;this.newRound();
+  },
+
+  /* ============ MULTIPLAYER (Firebase) ============ */
+  oppName(){return this.mp.on?"FRIEND":"DEALER";},
+
+  async createRoom(){
+    if(!db){ui.mpStatus("Firebase isn't configured in this file yet.");return;}
+    const code=[...Array(4)].map(()=>"ABCDEFGHJKMNPQRSTUVWXYZ"[Math.floor(Math.random()*23)]).join("");
+    const seed=(Math.random()*2**31)|0;
+    this.mp={on:true,code,seat:0,seq:0,pending:{},seed};
+    this.mySeat=0;
+    try{
+      await db.ref("rooms/"+code).set({seed,status:"waiting",created:Date.now()});
+    }catch(e){ui.mpStatus("Couldn't reach Firebase — check your config & rules.");this.mp={on:false};return;}
+    ui.mpStatus("ROOM CODE","Tell your friend to join with this code",code);
+    db.ref("rooms/"+code+"/status").on("value",s=>{
+      if(s.val()==="playing")this.startMp();
+    });
+  },
+
+  async joinRoom(codeRaw){
+    if(!db){ui.mpStatus("Firebase isn't configured in this file yet.");return;}
+    const code=(codeRaw||"").trim().toUpperCase();
+    if(code.length!==4){ui.mpStatus("Enter the 4-letter room code.");return;}
+    let snap;
+    try{snap=await db.ref("rooms/"+code).once("value");}
+    catch(e){ui.mpStatus("Couldn't reach Firebase — check your config & rules.");return;}
+    if(!snap.exists()){ui.mpStatus("Room "+code+" not found.");return;}
+    const room=snap.val();
+    if(room.status!=="waiting"){ui.mpStatus("That room already started.");return;}
+    this.mp={on:true,code,seat:1,seq:0,pending:{},seed:room.seed};
+    this.mySeat=1;
+    await db.ref("rooms/"+code+"/status").set("playing");
+    this.startMp();
+  },
+
+  startMp(){
+    db.ref("rooms/"+this.mp.code+"/status").off();
+    db.ref("rooms/"+this.mp.code+"/moves").on("child_added",s=>{
+      this.mp.pending[+s.key]=s.val();
+      this.drainMoves();
+    });
+    ui.hide("mpOv");ui.hide("titleOv");
+    this.match=[0,0];this.round=1;this.newRound();
+  },
+
+  drainMoves(){
+    if(!this.mp.on)return;
+    // drop anything already applied (e.g. the echo of our own move)
+    Object.keys(this.mp.pending).forEach(k=>{if(+k<this.mp.seq)delete this.mp.pending[k];});
+    const m=this.mp.pending[this.mp.seq];
+    if(!m||m.seat===this.mySeat)return;
+    if(this.turn!==m.seat)return;                 // not their turn yet (mid-animation)
+    delete this.mp.pending[this.mp.seq];
+    const card=this.hands[m.seat].find(c=>c.id===m.cardId);
+    const mini=document.querySelectorAll("#opprow .mini")[0];
+    this.play(m.seat,card,mini?mini.getBoundingClientRect():null,true);
+  },
+
+  leaveMp(){
+    if(this.mp.on&&db){
+      try{
+        db.ref("rooms/"+this.mp.code+"/moves").off();
+        db.ref("rooms/"+this.mp.code+"/status").off();
+        db.ref("rooms/"+this.mp.code).remove();
+      }catch(e){}
+    }
+    this.mp={on:false};this.mySeat=0;
   }
 };
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -525,30 +672,32 @@ const ui={
     return `<div class="card${red}${sp} ${cls}" data-id="${c.id}">${ix}${body}</div>`;
   },
   renderAll(){
-    const g=game;
+    const g=game,my=g.mySeat,op=1-my;
     this.el("floor").innerHTML=g.floor.map(c=>this.cardHTML(c,"floor-card")).join("");
     const hr=this.el("handrow");
-    hr.innerHTML=g.hands[0].map(c=>this.cardHTML(c,
-      "hand-card "+(g.locked||g.turn!==0?"dim":"playable"))).join("");
-    if(!g.locked&&g.turn===0)
+    hr.innerHTML=g.hands[my].map(c=>this.cardHTML(c,
+      "hand-card "+(g.locked||g.turn!==my?"dim":"playable"))).join("");
+    if(!g.locked&&g.turn===my)
       hr.querySelectorAll(".hand-card").forEach(el=>{
         el.onpointerdown=e=>this.dragStart(e,el);
       });
-    this.el("opprow").innerHTML=g.hands[1].map(()=>`<div class="card cardback mini"></div>`).join("");
+    this.el("opprow").innerHTML=g.hands[op].map(()=>`<div class="card cardback mini"></div>`).join("");
+    this.el("oppName").textContent=g.oppName();
     this.el("deckN").textContent=g.deck.length;
     this.el("roundN").textContent="ROUND "+g.round;
-    this.setPts("youPts",g.match[0]);
-    this.setPts("oppPts",g.match[1]);
-    this.el("youSub").textContent=`${g.piles[0].length} cards · ${g.basras[0]} basra`;
-    this.el("oppSub").textContent=`${g.piles[1].length} cards · ${g.basras[1]} basra`;
-    this.el("youbox").classList.toggle("active",g.turn===0&&!g.locked);
-    this.el("oppbox").classList.toggle("active",g.turn===1);
+    this.setPts("youPts",g.match[my]);
+    this.setPts("oppPts",g.match[op]);
+    this.el("youSub").textContent=`${g.piles[my].length} cards · ${g.basras[my]} basra`;
+    this.el("oppSub").textContent=`${g.piles[op].length} cards · ${g.basras[op]} basra`;
+    this.el("youbox").classList.toggle("active",g.turn===my&&!g.locked);
+    this.el("oppbox").classList.toggle("active",g.turn===op);
   },
   /* ---------- drag to play ---------- */
   dragStart(e,el){
-    if(game.locked||game.turn!==0)return;
+    const my=game.mySeat;
+    if(game.locked||game.turn!==my)return;
     e.preventDefault();
-    const card=game.hands[0].find(c=>c.id==el.dataset.id);
+    const card=game.hands[my].find(c=>c.id==el.dataset.id);
     if(!card)return;
     const fw=this.el("floorwrap");
     const startX=e.clientX,startY=e.clientY;
@@ -575,9 +724,10 @@ const ui={
       fw.classList.remove("dropready");
 
       if(!moved){                       // it was a tap — play it
+        game.locked=true;ui.el("youbox").classList.remove("active");
         el.classList.add("selected");
         const r=el.getBoundingClientRect();
-        setTimeout(()=>game.play(0,card,r),90);
+        setTimeout(()=>game.play(my,card,r),90);
         return;
       }
       const r=fw.getBoundingClientRect();
@@ -586,7 +736,7 @@ const ui={
       if(dropped){                      // dropped on the floor — play from here
         const rect=el.getBoundingClientRect();
         el.style.visibility="hidden";
-        game.play(0,card,rect);
+        game.play(my,card,rect);
       }else{                            // spring back to the hand
         const from=el.style.transform;
         el.classList.remove("dragging");
@@ -647,7 +797,7 @@ const ui={
   // sweep captured cards from the floor into a player's scorebox
   flyToPile(cards,pi){
     if(this.reduced)return Promise.resolve();
-    const box=this.el(pi===0?"youbox":"oppbox").getBoundingClientRect();
+    const box=this.el(pi===game.mySeat?"youbox":"oppbox").getBoundingClientRect();
     const tx=box.left+box.width/2, ty=box.top+box.height/2;
     const proms=cards.map((c,i)=>{
       const el=this.floorEl(c.id);if(!el)return Promise.resolve();
@@ -660,7 +810,7 @@ const ui={
       document.body.appendChild(g);
       const a=g.animate([
         {transform:`translate(${r.left}px,${r.top}px) scale(1) rotate(0deg)`,opacity:1},
-        {transform:`translate(${tx-r.width*.15}px,${ty-r.height*.15}px) scale(.22) rotate(${pi===0?18:-18}deg)`,opacity:.25}
+        {transform:`translate(${tx-r.width*.15}px,${ty-r.height*.15}px) scale(.22) rotate(${pi===game.mySeat?18:-18}deg)`,opacity:.25}
       ],{duration:430,delay:i*55,easing:"cubic-bezier(.5,0,.7,.4)",fill:"backwards"});
       return a.finished.catch(()=>{}).then(()=>g.remove());
     });
@@ -709,7 +859,7 @@ const ui={
 
   fx(pi,big,small,shake){
     const p=this.el("popup");
-    p.innerHTML=`<span class="big">${big}</span><span class="small">${small} ${pi===0?"— YOU":"— DEALER"}</span>`;
+    p.innerHTML=`<span class="big">${big}</span><span class="small">${small} ${pi===game.mySeat?"— YOU":"— "+game.oppName()}</span>`;
     p.classList.remove("show");void p.offsetWidth;p.classList.add("show");
     if(shake){document.getElementById("game").classList.add("shake");
       setTimeout(()=>document.getElementById("game").classList.remove("shake"),500);
@@ -719,22 +869,37 @@ const ui={
     const t=this.el("toast");t.textContent=msg;t.classList.add("show");
     clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),1800);
   },
-  roundSummary(n0,n1,p0,p1,maj){
-    const g=game,done=g.match[0]>=101||g.match[1]>=101;
+  roundSummary(n,p,majSeat){
+    const g=game,my=g.mySeat,op=1-my,who=g.oppName();
+    const whoT=who.charAt(0)+who.slice(1).toLowerCase();
+    const done=g.match[0]>=TARGET||g.match[1]>=TARGET;
+    const maj=majSeat<0?"Split — no bonus":
+      (majSeat===my?"You take the 30":whoT+" takes the 30");
     this.el("roundTitle").textContent=done?
-      (g.match[0]>g.match[1]?"YOU WIN THE MATCH!":"DEALER WINS"):"ROUND "+g.round+" OVER";
+      (g.match[my]>g.match[op]?"YOU WIN THE MATCH!":who+" WINS"):"ROUND "+g.round+" OVER";
     this.el("roundTable").innerHTML=`
-      <tr><td>Your cards</td><td>${n0}</td></tr>
-      <tr><td>Dealer cards</td><td>${n1}</td></tr>
+      <tr><td>Your cards</td><td>${n[my]}</td></tr>
+      <tr><td>${whoT} cards</td><td>${n[op]}</td></tr>
       <tr><td>Card majority</td><td>${maj}</td></tr>
-      <tr><td>Your basras</td><td>${g.basras[0]} × 10</td></tr>
-      <tr><td>Dealer basras</td><td>${g.basras[1]} × 10</td></tr>
-      <tr><td><b>Round points</b></td><td>You +${p0} / Dealer +${p1}</td></tr>
-      <tr><td><b>Match total</b></td><td>${g.match[0]} – ${g.match[1]}</td></tr>`;
-    this.el("roundBtn").textContent=done?"NEW MATCH":"NEXT ROUND";
+      <tr><td>Your basras</td><td>${g.basras[my]} × 10</td></tr>
+      <tr><td>${whoT} basras</td><td>${g.basras[op]} × 10</td></tr>
+      <tr><td><b>Round points</b></td><td>You +${p[my]} / ${whoT} +${p[op]}</td></tr>
+      <tr><td><b>Match total</b></td><td>${g.match[my]} – ${g.match[op]}</td></tr>`;
+    this.el("roundBtn").textContent=done?"DONE":"NEXT ROUND";
     this.show("roundOv");
   },
   help(on){on?this.show("helpOv"):this.hide("helpOv");},
+  mpShow(){
+    this.hide("titleOv");this.show("mpOv");
+    this.el("mpHome").classList.remove("hidden");
+    this.mpStatus(db?"":"Firebase isn't configured in this file yet — multiplayer needs it.");
+  },
+  mpStatus(line1,line2,code){
+    this.el("mpLine1").textContent=line1||"";
+    this.el("mpLine2").textContent=line2||"";
+    this.el("mpCode").textContent=code||"";
+    if(code)this.el("mpHome").classList.add("hidden");
+  },
   show(id){this.el(id).classList.remove("hidden");},
   hide(id){this.el(id).classList.add("hidden");}
 };
